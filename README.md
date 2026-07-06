@@ -1,40 +1,80 @@
 # Book Recommender
 
-A full-stack book recommendation app with a hybrid machine learning engine. Search books via the Google Books API, like titles to build a taste profile, and get ranked recommendations powered by TF-IDF content similarity and collaborative filtering.
+A full-stack book recommendation app with a hybrid machine learning engine. Search books via the Google Books API, build a taste profile from likes and dislikes, queue titles to read next, and get ranked recommendations powered by TF-IDF content similarity and collaborative filtering.
 
 ## Features
 
-- **Hybrid ML recommendations**: Combines TF-IDF cosine similarity on book text features with user-user and item-item collaborative filtering
-- **Web UI**: Search, like/dislike, and view scored recommendations at `http://localhost:3000`
-- **REST API**: JWT auth, book search, preference tracking, and Swagger docs
-- **Book cache**: Liked and candidate books are stored in MongoDB to improve ML feature quality and reduce API calls
-- **Docker-ready**: Containerized deployment included
+### Web UI (`http://localhost:3000`)
+
+- **Search** — Find books by title, author, or genre; liked titles show a ✓ marker
+- **Likes** — Add books with **+** from search or recommendations; remove with **×**
+- **Next read** — Queue books with **→** from search or recommendations
+- **ML recommendations** — Hybrid-ranked picks with:
+  - **−** dislike (hidden from future recommendations)
+  - **→** add to next read
+  - **+** like
+  - Always-visible **ML score** (0–100%) plus **What is the score?** explanation
+  - **Refresh** — fetches a new batch (skips books already shown this session)
+  - **Recommend 8 more** — appends the next batch and auto-expands the list
+- **Smart filtering** — Books in likes or next read are never recommended again
+- **Deduplication** — Filters duplicate editions, movie tie-ins, and box sets/trilogies
+- **Collapsible lists** — Panels with 8+ books show **Show more / Show less**
+
+### API
+
+- JWT authentication (register / login)
+- Book search and detail lookup
+- Like, unlike, dislike, next-read tracking
+- ML recommendations with scores, reasons, and pagination support
+- Swagger docs at `/api-docs`
+- Health check at `/api/health`
+
+### ML engine
+
+- **Hybrid scoring** — 60% TF-IDF content similarity + 40% collaborative filtering
+- **Candidate discovery** — Genre/author searches via Google Books plus MongoDB cache fallback
+- **Rate-limit handling** — Batched API calls with graceful fallback when Google returns 429
+- **Book cache** — Liked and candidate books stored in MongoDB for richer features and fewer API calls
 
 ## ML Approach
 
-The recommender uses a two-stage hybrid model:
-
 1. **Content-based (60%)** — Builds TF-IDF vectors from each book's title, authors, categories, and description, then scores candidates by cosine similarity to the user's average liked-book profile.
+
 2. **Collaborative filtering (40%)** — Finds similar users via Jaccard similarity on liked books and boosts books co-liked with the user's favorites.
 
-Candidate books are gathered from Google Books searches (categories, authors, related titles) plus the local cache, then ranked and returned with ML scores and explanations.
+3. **Candidate pool** — Books are gathered from Google Books category searches and the local cache, deduplicated, then ranked.
+
+4. **Exclusions** — Liked, disliked, next-read, and explicitly excluded IDs are removed before results are returned.
 
 ## Project Structure
 
 ```
 BookRecommender/
-├── public/                  # Web frontend
+├── public/                     # Web frontend (HTML, CSS, JS)
+│   ├── index.html              # Main app
+│   ├── login.html
+│   ├── register.html
+│   ├── app.js
+│   ├── auth.js
+│   └── styles.css
 ├── src/
+│   ├── config/                 # Env loading, database connection
 │   ├── controllers/
-│   ├── models/              # User + Book cache
+│   ├── middlewares/
+│   ├── models/                 # User + Book cache
 │   ├── routes/
 │   ├── services/
 │   │   ├── bookService.js
 │   │   ├── bookCacheService.js
-│   │   └── recommendationService.js   # ML engine
-│   └── utils/bookFeatures.js
+│   │   └── recommendationService.js
+│   └── utils/
+│       ├── bookDeduplication.js
+│       ├── bookFeatures.js
+│       ├── contentModel.js
+│       └── similarity.js
 ├── tests/
-└── Dockerfile
+├── Dockerfile
+└── .env.example
 ```
 
 ## Tech Stack
@@ -51,7 +91,7 @@ BookRecommender/
 ### Prerequisites
 
 - Node.js 18+
-- MongoDB (local or Atlas)
+- MongoDB (local or [MongoDB Atlas](https://cloud.mongodb.com))
 
 ### Installation
 
@@ -59,12 +99,13 @@ BookRecommender/
 npm install
 ```
 
-Create a `.env` file:
+Copy `.env.example` to `.env` and fill in your values:
 
 ```env
 PORT=3000
 MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_super_secret_jwt_key
+GOOGLE_BOOKS_API_KEY=optional_for_higher_search_limits
 ```
 
 ### Run
@@ -73,7 +114,11 @@ JWT_SECRET=your_super_secret_jwt_key
 npm run dev
 ```
 
-Open `http://localhost:3000` for the UI, or `http://localhost:3000/api-docs` for Swagger.
+- **Web UI**: `http://localhost:3000`
+- **Swagger**: `http://localhost:3000/api-docs`
+- **Health**: `http://localhost:3000/api/health`
+
+Like at least a few books (10+ gives the best results), then open **ML Recommendations** and click **Refresh**.
 
 ### Tests
 
@@ -81,7 +126,7 @@ Open `http://localhost:3000` for the UI, or `http://localhost:3000/api-docs` for
 npm test
 ```
 
-Integration tests require MongoDB and network access to Google Books.
+Unit tests for ML utilities and deduplication run without external services. Integration tests require MongoDB and may call Google Books.
 
 ### MongoDB Atlas free tier
 
@@ -91,7 +136,7 @@ Atlas free clusters can pause after long inactivity. If login or recommendations
 2. Click **Resume** if the cluster is paused
 3. Wait about a minute, then retry
 
-The API keeps running without the database and will reconnect automatically. Book search still works while MongoDB is waking up. Check status at `GET /api/health`.
+The API keeps running without the database and reconnects automatically. Book search still works while MongoDB is waking up.
 
 ## API Endpoints
 
@@ -99,31 +144,50 @@ All endpoints are prefixed with `/api`.
 
 ### Auth
 
-- `POST /auth/register` — Create account
-- `POST /auth/login` — Log in and receive JWT
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/register` | Create account |
+| `POST` | `/auth/login` | Log in and receive JWT |
 
 ### Books
 
-- `GET /books/search?q=` — Search Google Books
-- `GET /books/:id` — Book details
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/books/search?q=` | Search Google Books |
+| `GET` | `/books/:id` | Book details |
 
 ### User (JWT required)
 
-- `POST /user/like` — Like a book
-- `POST /user/dislike` — Dislike a book
-- `GET /user/likes` — Liked books
-- `GET /user/recommendations` — ML-ranked recommendations with scores
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/user/like` | Like a book `{ bookId, book? }` |
+| `POST` | `/user/unlike` | Remove a like `{ bookId }` |
+| `POST` | `/user/dislike` | Dislike a book `{ bookId, book? }` |
+| `GET` | `/user/likes` | List liked books |
+| `GET` | `/user/next-read` | List next-read queue |
+| `POST` | `/user/next-read` | Add to next read `{ bookId, book? }` |
+| `POST` | `/user/next-read/remove` | Remove from next read `{ bookId }` |
+| `GET` | `/user/recommendations` | ML-ranked recommendations |
 
-Example recommendation response:
+### Recommendations query parameters
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `limit` | `8` | Number of results (1–20) |
+| `exclude` | — | Comma-separated book IDs to skip (used for refresh and load-more) |
+
+Example response:
 
 ```json
 {
   "model": "hybrid-tfidf-collaborative-filtering",
   "weights": { "content": 0.6, "collaborative": 0.4 },
+  "hasMore": true,
   "results": [
     {
       "id": "...",
       "title": "...",
+      "authors": ["..."],
       "score": 0.82,
       "contentScore": 0.91,
       "collaborativeScore": 0.65,
@@ -145,4 +209,4 @@ docker run -p 3000:3000 \
 
 ## Postman
 
-Import `Book-Recommendation-API.postman_collection.json` for ready-made API tests.
+Import `Book-Recommendation-API.postman_collection.json` (if included in the repo) for ready-made API tests.
