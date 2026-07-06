@@ -13,12 +13,18 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  likedBooks: [{
-    type: String, // Storing Google Books volume IDs
-  }],
-  dislikedBooks: [{
-    type: String, // Storing Google Books volume IDs
-  }],
+  likedBooks: {
+    type: [String],
+    default: [],
+  },
+  dislikedBooks: {
+    type: [String],
+    default: [],
+  },
+  nextReadBooks: {
+    type: [String],
+    default: [],
+  },
 });
 
 // Hash the password before saving the user model

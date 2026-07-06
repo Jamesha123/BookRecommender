@@ -87,5 +87,6 @@ describe('User Endpoints', () => {
     
     expect(res.statusCode).toEqual(200);
     expect(res.body.results).toBeInstanceOf(Array);
+    expect(res.body).toHaveProperty('model', 'hybrid-tfidf-collaborative-filtering');
   });
 });

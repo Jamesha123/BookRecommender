@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { register, login } = require('../controllers/authController');
+const { requireDatabase } = require('../config/database');
+
+router.use(requireDatabase);
 
 /**
  * @swagger
@@ -37,7 +40,7 @@ const { register, login } = require('../controllers/authController');
  *       400:
  *         description: User already exists or invalid data
  */
-router.post('/login', login);
+router.post('/register', register);
 
 /**
  * @swagger

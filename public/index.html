@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Recommender</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div>
+        <p class="eyebrow">Hybrid ML Engine</p>
+        <h1>Book Recommender</h1>
+        <p class="subtitle">TF-IDF content similarity + collaborative filtering</p>
+      </div>
+      <div id="auth-panel" class="auth-panel"></div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Search Books</h2>
+        <form id="search-form" class="search-form">
+          <input id="search-input" type="search" placeholder="Search by title, author, or genre" required>
+          <button type="submit">Search</button>
+        </form>
+        <div id="search-results" class="book-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Next Read</h2>
+        <p class="panel-hint">Save ML recommendations or search results with the <strong>→</strong> button.</p>
+        <div id="next-read-books" class="book-grid compact"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Your Likes</h2>
+        <p class="panel-hint">Search for books above and click <strong>+</strong> on any result to add it to your likes. For best results, add at least 10 books.</p>
+        <div id="liked-books" class="book-grid compact"></div>
+      </section>
+
+      <section class="panel highlight">
+        <div class="panel-header">
+          <h2>ML Recommendations</h2>
+          <div class="panel-header-actions">
+            <button id="score-help-btn" class="secondary" type="button">What is the score?</button>
+            <button id="refresh-recommendations" class="secondary" type="button">Refresh</button>
+          </div>
+        </div>
+        <p class="panel-hint">Use <strong>−</strong> for not interested, <strong>→</strong> for next read, and <strong>+</strong> to like. Refresh shows a loading state while new picks are generated.</p>
+        <div id="score-help-panel" class="score-help-panel hidden">
+          <p><strong>ML score</strong> is a match rating from 0% to 100%. Higher means the model thinks you are more likely to enjoy the book.</p>
+          <p>It blends two signals from your likes:</p>
+          <ul>
+            <li><strong>60% content similarity</strong> — themes, genres, and writing style (TF-IDF)</li>
+            <li><strong>40% collaborative filtering</strong> — books enjoyed by readers with similar taste</li>
+          </ul>
+          <p>The percentage on each card is that combined score. It helps compare recommendations to each other, not predict a perfect read.</p>
+        </div>
+        <p id="model-info" class="model-info"></p>
+        <div id="recommendations" class="book-grid"></div>
+        <button id="load-more-recommendations" class="secondary load-more-btn hidden" type="button">Recommend 8 more</button>
+      </section>
+    </main>
+  </div>
+
+  <template id="book-card-template">
+    <article class="book-card">
+      <div class="book-card-main">
+        <img class="book-cover" alt="">
+        <div class="book-content">
+          <h3 class="book-title"></h3>
+          <p class="book-authors"></p>
+          <p class="book-categories"></p>
+          <p class="book-score hidden"></p>
+          <div class="book-extra">
+            <p class="book-reason hidden"></p>
+          </div>
+          <button class="book-toggle-btn hidden" type="button">Show more</button>
+        </div>
+      </div>
+      <div class="book-actions-corner">
+        <button class="dislike-btn icon-btn" type="button" aria-label="Not interested" title="Not interested">−</button>
+        <button class="next-read-btn icon-btn" type="button" aria-label="Add to next read" title="Add to next read">→</button>
+        <button class="like-btn icon-btn" type="button" aria-label="Add to likes" title="Add to likes">+</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="/app.js?v=15"></script>
+</body>
+</html>

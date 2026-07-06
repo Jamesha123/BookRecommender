@@ -1,142 +1,148 @@
-# 📘 Book Recommendation REST API
+# Book Recommender
 
-A Node.js and Express-based REST API that provides personalized book recommendations. This project integrates with the Google Books API for real-time book data and uses JWT for secure user authentication.
+A full-stack book recommendation app with a hybrid machine learning engine. Search books via the Google Books API, like titles to build a taste profile, and get ranked recommendations powered by TF-IDF content similarity and collaborative filtering.
 
-## ⭐ Features
+## Features
 
--   **User Authentication**: Secure user registration and login using JSON Web Tokens (JWT).
--   **External API Integration**: Search for any book using the extensive Google Books API.
--   **Personalized Recommendations**: Get book recommendations based on your personal list of liked books.
--   **CRUD Operations**: Save your favorite books and manage your liked/disliked lists.
--   **Interactive Documentation**: Explore and test all API endpoints using the integrated Swagger UI.
--   **Containerized**: Ready for deployment with a complete Dockerfile.
+- **Hybrid ML recommendations**: Combines TF-IDF cosine similarity on book text features with user-user and item-item collaborative filtering
+- **Web UI**: Search, like/dislike, and view scored recommendations at `http://localhost:3000`
+- **REST API**: JWT auth, book search, preference tracking, and Swagger docs
+- **Book cache**: Liked and candidate books are stored in MongoDB to improve ML feature quality and reduce API calls
+- **Docker-ready**: Containerized deployment included
 
-## 🏗️ Project Architecture
+## ML Approach
+
+The recommender uses a two-stage hybrid model:
+
+1. **Content-based (60%)** — Builds TF-IDF vectors from each book's title, authors, categories, and description, then scores candidates by cosine similarity to the user's average liked-book profile.
+2. **Collaborative filtering (40%)** — Finds similar users via Jaccard similarity on liked books and boosts books co-liked with the user's favorites.
+
+Candidate books are gathered from Google Books searches (categories, authors, related titles) plus the local cache, then ranked and returned with ML scores and explanations.
+
+## Project Structure
 
 ```
-/book-api
- ├─ src
- │   ├─ controllers
- │   ├─ routes
- │   ├─ services
- │   ├─ models
- │   ├─ middlewares
- │   ├─ app.js
- │   └─ server.js
- ├─ tests
- ├─ .env
- ├─ package.json
- ├─ Dockerfile
- └─ README.md
+BookRecommender/
+├── public/                  # Web frontend
+├── src/
+│   ├── controllers/
+│   ├── models/              # User + Book cache
+│   ├── routes/
+│   ├── services/
+│   │   ├── bookService.js
+│   │   ├── bookCacheService.js
+│   │   └── recommendationService.js   # ML engine
+│   └── utils/bookFeatures.js
+├── tests/
+└── Dockerfile
 ```
 
-## 🔧 Tech Stack
+## Tech Stack
 
--   **Backend**: Node.js, Express.js
--   **Database**: MongoDB (with Mongoose)
--   **Authentication**: JSON Web Tokens (JWT), bcrypt.js
--   **API Testing**: Jest, Supertest
--   **Documentation**: Swagger (OpenAPI)
--   **Containerization**: Docker
+- **Backend**: Node.js, Express
+- **Database**: MongoDB, Mongoose
+- **ML**: Custom TF-IDF content model + collaborative filtering
+- **External data**: Google Books API
+- **Auth**: JWT, bcrypt
+- **Testing**: Jest, Supertest
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
--   Node.js (v18 or higher recommended)
--   MongoDB (either a local installation or a free MongoDB Atlas cloud database)
--   Docker (optional, for containerization)
+- Node.js 18+
+- MongoDB (local or Atlas)
 
 ### Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <your-repo-url>
-    cd book-api
-    ```
+```bash
+npm install
+```
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+Create a `.env` file:
 
-3.  **Set up environment variables:**
-    Create a `.env` file in the root of the project and add the following variables.
+```env
+PORT=3000
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_super_secret_jwt_key
+```
 
-    ```env
-    PORT=3000
-    MONGO_URI=your_mongodb_connection_string
-    JWT_SECRET=your_super_secret_jwt_key
-    ```
-    Replace `your_mongodb_connection_string` with your actual MongoDB connection URI and choose a strong `JWT_SECRET`.
+### Run
 
-### Running the Application
+```bash
+npm run dev
+```
 
--   **Development Mode** (with auto-restarting):
-    ```bash
-    npm run dev
-    ```
+Open `http://localhost:3000` for the UI, or `http://localhost:3000/api-docs` for Swagger.
 
--   **Production Mode**:
-    ```bash
-    npm start
-    ```
-
-The server will be running at `http://localhost:3000`.
-
-### Running Tests
-
-To run the full suite of integration tests:
+### Tests
 
 ```bash
 npm test
 ```
 
-## 📡 API Endpoints
+Integration tests require MongoDB and network access to Google Books.
+
+### MongoDB Atlas free tier
+
+Atlas free clusters can pause after long inactivity. If login or recommendations fail:
+
+1. Open your cluster in the [MongoDB Atlas dashboard](https://cloud.mongodb.com)
+2. Click **Resume** if the cluster is paused
+3. Wait about a minute, then retry
+
+The API keeps running without the database and will reconnect automatically. Book search still works while MongoDB is waking up. Check status at `GET /api/health`.
+
+## API Endpoints
 
 All endpoints are prefixed with `/api`.
 
-### Interactive Documentation
+### Auth
 
-For a full, interactive API specification, run the server and navigate to:
-**[http://localhost:3000/api-docs](http://localhost:3000/api-docs)**
+- `POST /auth/register` — Create account
+- `POST /auth/login` — Log in and receive JWT
 
-This Swagger UI allows you to explore and test all available endpoints directly from your browser.
+### Books
 
-### Authentication (`/auth`)
+- `GET /books/search?q=` — Search Google Books
+- `GET /books/:id` — Book details
 
--   `POST /register`: Create a new user account.
--   `POST /login`: Log in and receive a JWT.
+### User (JWT required)
 
-### Book Search (`/books`)
+- `POST /user/like` — Like a book
+- `POST /user/dislike` — Dislike a book
+- `GET /user/likes` — Liked books
+- `GET /user/recommendations` — ML-ranked recommendations with scores
 
--   `GET /search?q={query}`: Search for books by title or author.
--   `GET /{id}`: Get detailed information for a specific book by its Google Books ID.
+Example recommendation response:
 
-### User Actions (`/user`)
+```json
+{
+  "model": "hybrid-tfidf-collaborative-filtering",
+  "weights": { "content": 0.6, "collaborative": 0.4 },
+  "results": [
+    {
+      "id": "...",
+      "title": "...",
+      "score": 0.82,
+      "contentScore": 0.91,
+      "collaborativeScore": 0.65,
+      "reason": "Similar writing style, themes, and genres to books you liked"
+    }
+  ]
+}
+```
 
-*(Authentication required for all user endpoints)*
+## Docker
 
--   `POST /like`: Add a book to your liked list.
--   `POST /dislike`: Add a book to your disliked list.
---   `GET /likes`: Retrieve a list of all your liked books.
--   `GET /recommendations`: Get a list of personalized book recommendations.
+```bash
+docker build -t book-recommender-api .
+docker run -p 3000:3000 \
+  -e MONGO_URI="your_mongodb_connection_string" \
+  -e JWT_SECRET="your_jwt_secret" \
+  book-recommender-api
+```
 
-## 🐳 Docker Support
+## Postman
 
-You can build and run this application as a Docker container.
-
-1.  **Build the image:**
-    ```bash
-    docker build -t book-recommender-api .
-    ```
-
-2.  **Run the container:**
-    ```bash
-    docker run -p 3000:3000 -e MONGO_URI="your_mongodb_connection_string" -e JWT_SECRET="your_jwt_secret" book-recommender-api
-    ```
-    *Note: You must pass your environment variables directly to the `docker run` command.*
-
-## 📄 Postman Collection
-
-A Postman collection is included in the root of this project: `Book-Recommendation-API.postman_collection.json`. You can import this file into Postman for a ready-to-use testing suite for the API.
+Import `Book-Recommendation-API.postman_collection.json` for ready-made API tests.

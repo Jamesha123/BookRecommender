@@ -1,12 +1,21 @@
-require('dotenv').config();
+const path = require('path');
+const { loadEnv } = require('./config/env');
+
+loadEnv();
+
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/authRoutes');
 const bookRoutes = require('./routes/bookRoutes');
 const userRoutes = require('./routes/userRoutes');
 const setupSwagger = require('./swaggerConfig');
+const {
+  connectWithRetry,
+  setupConnectionEvents,
+  isConnected,
+  getConnectionStatus,
+} = require('./config/database');
 
 const app = express();
 
@@ -18,21 +27,33 @@ setupSwagger(app);
 
 // Database Connection
 if (process.env.NODE_ENV !== 'test') {
-  mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    useCreateIndex: true,
-  })
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(err));
+  if (!process.env.MONGO_URI) {
+    console.error('Missing MONGO_URI. Add it to .env in the project root or src/.env');
+    process.exit(1);
+  }
+
+  setupConnectionEvents();
+  connectWithRetry();
 }
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    database: {
+      connected: isConnected(),
+      state: getConnectionStatus(),
+    },
+  });
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/user', userRoutes);
 
+app.use(express.static(path.join(__dirname, '../public')));
+
 app.get('/', (req, res) => {
-  res.send('Book Recommendation API');
+  res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 module.exports = app;

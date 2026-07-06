@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log In - Book Recommender</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app auth-page">
+    <section class="panel auth-card">
+      <a class="back-link" href="/">← Back to app</a>
+      <p class="eyebrow">Welcome back</p>
+      <h1>Log in</h1>
+      <p class="subtitle">Sign in to save likes and get ML recommendations.</p>
+
+      <form id="login-form" class="auth-form">
+        <label>
+          Email
+          <input name="email" type="email" placeholder="you@example.com" required>
+        </label>
+        <label>
+          Password
+          <input name="password" type="password" placeholder="Your password" required>
+        </label>
+        <p id="auth-error" class="error-message hidden"></p>
+        <button type="submit">Log in</button>
+      </form>
+
+      <p class="auth-switch">
+        New here?
+        <a href="/register.html">Create an account</a>
+      </p>
+    </section>
+  </div>
+
+  <script src="/auth.js"></script>
+  <script>
+    setupAuthForm({
+      formId: 'login-form',
+      endpoint: '/api/auth/login',
+      errorId: 'auth-error',
+    });
+  </script>
+</body>
+</html>

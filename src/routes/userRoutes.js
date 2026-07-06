@@ -1,7 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { likeBook, dislikeBook, getLikedBooks, getRecommendations } = require('../controllers/userController');
+const {
+  likeBook,
+  dislikeBook,
+  unlikeBook,
+  getLikedBooks,
+  getNextReadBooks,
+  addToNextRead,
+  removeFromNextRead,
+  getRecommendations,
+} = require('../controllers/userController');
 const { protect } = require('../middlewares/authMiddleware');
+const { requireDatabase } = require('../config/database');
+
+router.use(requireDatabase);
 
 /**
  * @swagger
@@ -36,6 +48,8 @@ const { protect } = require('../middlewares/authMiddleware');
  *         description: Not authorized
  */
 router.post('/like', protect, likeBook);
+router.post('/unlike', protect, unlikeBook);
+router.delete('/like/:bookId', protect, unlikeBook);
 
 /**
  * @swagger
@@ -79,6 +93,9 @@ router.post('/dislike', protect, dislikeBook);
  *         description: Not authorized
  */
 router.get('/likes', protect, getLikedBooks);
+router.get('/next-read', protect, getNextReadBooks);
+router.post('/next-read', protect, addToNextRead);
+router.post('/next-read/remove', protect, removeFromNextRead);
 
 /**
  * @swagger

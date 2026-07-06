@@ -11,7 +11,8 @@ exports.search = async (req, res) => {
     const books = await bookService.searchBooks(q);
     res.json({ results: books });
   } catch (error) {
-    res.status(500).json({ message: 'Error searching for books' });
+    const status = error.message.includes('rate-limited') ? 429 : 500;
+    res.status(status).json({ message: error.message || 'Error searching for books' });
   }
 };
 
