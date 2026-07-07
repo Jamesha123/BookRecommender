@@ -1,6 +1,6 @@
-# Book Recommender
+# BookRecommender
 
-A full-stack book recommendation app with a hybrid machine learning engine. Search books via the Google Books API, build a taste profile from likes and dislikes, queue titles to read next, and get ranked recommendations powered by TF-IDF content similarity and collaborative filtering.
+A full-stack book recommendation app with a **trained** hybrid machine learning pipeline. Search books via the Google Books API, build a taste profile from likes and dislikes, queue titles to read next, and get ranked recommendations from a model that learns from user feedback.
 
 ## Features
 
@@ -31,20 +31,48 @@ A full-stack book recommendation app with a hybrid machine learning engine. Sear
 
 ### ML engine
 
-- **Hybrid scoring** — 60% TF-IDF content similarity + 40% collaborative filtering
+- **Trained hybrid ranker** — Matrix factorization + TF-IDF features, blended by a learned logistic ranker
+- **Automatic retraining** — Model updates when users like, unlike, or dislike books
+- **Persistent artifacts** — Trained models stored in MongoDB (`MLModel` collection)
 - **Candidate discovery** — Genre/author searches via Google Books plus MongoDB cache fallback
 - **Rate-limit handling** — Batched API calls with graceful fallback when Google returns 429
 - **Book cache** — Liked and candidate books stored in MongoDB for richer features and fewer API calls
 
 ## ML Approach
 
-1. **Content-based (60%)** — Builds TF-IDF vectors from each book's title, authors, categories, and description, then scores candidates by cosine similarity to the user's average liked-book profile.
+The app uses a real **train → store → infer** pipeline:
 
-2. **Collaborative filtering (40%)** — Finds similar users via Jaccard similarity on liked books and boosts books co-liked with the user's favorites.
+```text
+User likes/dislikes  →  Training dataset  →  Trained model artifact  →  Recommendation scores
+```
 
-3. **Candidate pool** — Books are gathered from Google Books category searches and the local cache, deduplicated, then ranked.
+### 1. Training (`src/ml/training/`)
 
-4. **Exclusions** — Liked, disliked, next-read, and explicitly excluded IDs are removed before results are returned.
+| Step | Method | What it learns |
+|------|--------|----------------|
+| Content features | TF-IDF vocabulary | Word importance across the book catalog |
+| Collaborative signal | Matrix factorization (SGD) | 16-dimensional user and book latent factors from likes/dislikes |
+| Final ranker | Logistic regression (SGD) | Weights that combine content + collaborative features into a like probability |
+
+Training runs:
+- On server startup (if no model exists or the model is stale)
+- After like / unlike / dislike changes
+- Manually via `npm run train`
+
+### 2. Inference (`src/ml/inference/`)
+
+For each candidate book:
+1. **Content score** — Cosine similarity between the candidate's TF-IDF vector and the user's liked-book profile (using the trained vocabulary)
+2. **Collaborative score** — Sigmoid of the dot product between the user's latent factor and the book's latent factor
+3. **Final score** — `sigmoid(bias + w₁×content + w₂×collaborative)` using **learned** ranker weights
+
+Cold-start handling:
+- New users infer a latent factor from the average of their liked books' factors
+- Books not yet seen in training still get a content score
+
+### 3. Retrieval + filtering (unchanged)
+
+Books are gathered from Google Books category searches and the local cache, deduplicated, then passed to the trained ranker.
 
 ## Project Structure
 
@@ -61,7 +89,13 @@ BookRecommender/
 │   ├── config/                 # Env loading, database connection
 │   ├── controllers/
 │   ├── middlewares/
-│   ├── models/                 # User + Book cache
+│   ├── ml/
+│   │   ├── training/           # Dataset builder, MF, logistic ranker, trainer
+│   │   ├── inference/          # Predictor used at request time
+│   │   ├── math/               # Linear algebra helpers
+│   │   ├── config.js
+│   │   └── modelStore.js       # Load/cache/retrain model artifacts
+│   ├── models/                 # User, Book cache, MLModel
 │   ├── routes/
 │   ├── services/
 │   │   ├── bookService.js
@@ -70,8 +104,10 @@ BookRecommender/
 │   └── utils/
 │       ├── bookDeduplication.js
 │       ├── bookFeatures.js
-│       ├── contentModel.js
+│       ├── contentModel.js     # Fallback content scoring
 │       └── similarity.js
+├── scripts/
+│   └── train.js                # Manual training entry point
 ├── tests/
 ├── Dockerfile
 └── .env.example
@@ -119,6 +155,14 @@ npm run dev
 - **Health**: `http://localhost:3000/api/health`
 
 Like at least a few books (10+ gives the best results), then open **ML Recommendations** and click **Refresh**.
+
+### Train the model manually
+
+```bash
+npm run train
+```
+
+This exports likes/dislikes from MongoDB, trains matrix factorization + logistic ranker weights, and saves a new artifact to the `MLModel` collection.
 
 ### Tests
 
@@ -180,8 +224,9 @@ Example response:
 
 ```json
 {
-  "model": "hybrid-tfidf-collaborative-filtering",
-  "weights": { "content": 0.6, "collaborative": 0.4 },
+  "model": "trained-hybrid-v1",
+  "trainedAt": "2026-07-07T18:00:00.000Z",
+  "weights": { "content": 0.62, "collaborative": 0.38 },
   "hasMore": true,
   "results": [
     {
@@ -197,16 +242,18 @@ Example response:
 }
 ```
 
+`weights` are normalized from the trained ranker. They update after retraining.
+
 ## Docker
 
 ```bash
-docker build -t book-recommender-api .
+docker build -t bookrecommender .
 docker run -p 3000:3000 \
   -e MONGO_URI="your_mongodb_connection_string" \
   -e JWT_SECRET="your_jwt_secret" \
-  book-recommender-api
+  bookrecommender
 ```
 
 ## Postman
 
-Import `Book-Recommendation-API.postman_collection.json` (if included in the repo) for ready-made API tests.
+Import `Book-Recommendation-API.postman_collection.json` for ready-made API tests.

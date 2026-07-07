@@ -12,6 +12,8 @@ const BookSchema = new mongoose.Schema({
   categories: [String],
   description: String,
   thumbnail: String,
+  averageRating: Number,
+  ratingsCount: Number,
   featureText: String,
   lastFetched: {
     type: Date,

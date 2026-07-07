@@ -1,7 +1,7 @@
 {
 	"info": {
 		"_postman_id": "YOUR_COLLECTION_ID",
-		"name": "Book Recommendation API",
+		"name": "BookRecommender API",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [

@@ -2,6 +2,7 @@ const User = require('../models/User');
 const bookService = require('../services/bookService');
 const bookCacheService = require('../services/bookCacheService');
 const recommendationService = require('../services/recommendationService');
+const { scheduleRetrain } = require('../ml/modelStore');
 const { normalizeBookIds, buildFallbackBook } = require('../utils/userBooks');
 
 const getUserBookIds = (user) => normalizeBookIds(user.likedBooks);
@@ -79,6 +80,8 @@ exports.likeBook = async (req, res) => {
       await cacheBookIfProvided(bookId, null);
     }
 
+    void scheduleRetrain();
+
     res.status(200).json({ message: 'Book added to likes' });
   } catch (error) {
     console.error('Like book error:', error);
@@ -119,6 +122,8 @@ exports.dislikeBook = async (req, res) => {
       await cacheBookIfProvided(bookId, null);
     }
 
+    void scheduleRetrain();
+
     res.status(200).json({ message: 'Book marked as not interested' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -145,6 +150,7 @@ exports.unlikeBook = async (req, res) => {
     const likedBookIds = getUserBookIds(user).filter((id) => id !== bookId);
     saveUserBookIds(user, likedBookIds, getUserDislikedIds(user));
     await user.save();
+    void scheduleRetrain();
     res.status(200).json({ message: 'Book removed from likes' });
   } catch (error) {
     console.error('Unlike book error:', error);
@@ -259,30 +265,31 @@ exports.getRecommendations = async (req, res) => {
     );
 
     if (!user || user.likedBooks.length === 0) {
+      const metadata = await recommendationService.getModelMetadata();
+
       return res.json({
         results: [],
         hasMore: false,
-        model: 'hybrid-tfidf-collaborative-filtering',
-        weights: {
-          content: recommendationService.CONTENT_WEIGHT,
-          collaborative: recommendationService.COLLABORATIVE_WEIGHT,
-        },
+        model: metadata.version,
+        weights: metadata.weights,
+        trainedAt: metadata.trainedAt,
       });
     }
 
-    const { results, hasMore } = await recommendationService.generateRecommendations(user, {
-      limit,
-      excludeIds,
-    });
+    const [{ results, hasMore }, metadata] = await Promise.all([
+      recommendationService.generateRecommendations(user, {
+        limit,
+        excludeIds,
+      }),
+      recommendationService.getModelMetadata(),
+    ]);
 
     res.json({
       results,
       hasMore,
-      model: 'hybrid-tfidf-collaborative-filtering',
-      weights: {
-        content: recommendationService.CONTENT_WEIGHT,
-        collaborative: recommendationService.COLLABORATIVE_WEIGHT,
-      },
+      model: metadata.version,
+      weights: metadata.weights,
+      trainedAt: metadata.trainedAt,
     });
   } catch (error) {
     console.error('Recommendation error:', error);

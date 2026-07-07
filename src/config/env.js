@@ -33,7 +33,7 @@ const loadEnv = () => {
   }
 
   if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = 'book-recommender-dev-secret-change-me';
+    process.env.JWT_SECRET = 'bookrecommender-dev-secret-change-me';
     console.warn('JWT_SECRET not set. Using a development fallback — set JWT_SECRET in .env for production.');
   }
 };

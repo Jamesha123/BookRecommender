@@ -63,6 +63,7 @@ h1 {
 .subtitle,
 .model-info,
 .book-authors,
+.book-rating,
 .book-categories,
 .book-score,
 .book-reason {
@@ -319,6 +320,15 @@ button:hover {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
   overflow: hidden;
+}
+
+.book-rating {
+  font-size: 0.9rem;
+  color: #f0c674;
+}
+
+.book-rating .rating-count {
+  color: var(--muted);
 }
 
 .book-categories {

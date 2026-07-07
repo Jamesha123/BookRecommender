@@ -1,15 +1,15 @@
-const User = require('../models/User');
 const bookService = require('./bookService');
 const bookCacheService = require('./bookCacheService');
-const { getContentScores } = require('../utils/contentModel');
 const {
   filterRecommendationCandidates,
   shouldExcludeFromRecommendations,
 } = require('../utils/bookDeduplication');
-const { jaccardSimilarity, normalizeScores } = require('../utils/similarity');
+const { ensureModel, getModelMetadata } = require('../ml/modelStore');
+const { scoreCandidates } = require('../ml/inference/predictor');
+const { getContentScores } = require('../utils/contentModel');
+const { normalizeScores } = require('../utils/similarity');
+const { applyPopularityBias } = require('../utils/popularity');
 
-const CONTENT_WEIGHT = 0.6;
-const COLLABORATIVE_WEIGHT = 0.4;
 const MAX_CANDIDATES = 200;
 const SEARCH_RESULT_LIMIT = 10;
 const DEFAULT_LIMIT = 8;
@@ -17,54 +17,11 @@ const LOAD_MORE_LIMIT = 8;
 const MIN_CANDIDATE_POOL = 40;
 const SEARCH_BATCH_SIZE = 2;
 const SEARCH_BATCH_DELAY_MS = 400;
+const DEFAULT_CONTENT_WEIGHT = 0.6;
+const DEFAULT_COLLABORATIVE_WEIGHT = 0.4;
+const POPULARITY_BIAS_WEIGHT = 0.08;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const getCollaborativeScores = async (user, candidateIds) => {
-  const candidateSet = new Set(candidateIds);
-  const scores = Object.fromEntries(candidateIds.map((id) => [id, 0]));
-
-  if (candidateIds.length === 0) {
-    return scores;
-  }
-
-  const users = await User.find({ _id: { $ne: user._id } }).select('likedBooks dislikedBooks');
-  const userLikes = new Set(user.likedBooks);
-  const userDislikes = new Set(user.dislikedBooks);
-  const userNextRead = new Set(user.nextReadBooks || []);
-  const seenBooks = new Set([...userLikes, ...userDislikes, ...userNextRead]);
-
-  users.forEach((otherUser) => {
-    const otherLikes = new Set(otherUser.likedBooks);
-    const userSimilarity = jaccardSimilarity(userLikes, otherLikes);
-
-    if (userSimilarity === 0) {
-      return;
-    }
-
-    otherUser.likedBooks.forEach((bookId) => {
-      if (!seenBooks.has(bookId) && candidateSet.has(bookId)) {
-        scores[bookId] += userSimilarity;
-      }
-    });
-  });
-
-  user.likedBooks.forEach((likedId) => {
-    users.forEach((otherUser) => {
-      if (!otherUser.likedBooks.includes(likedId)) {
-        return;
-      }
-
-      otherUser.likedBooks.forEach((bookId) => {
-        if (bookId !== likedId && !seenBooks.has(bookId) && candidateSet.has(bookId)) {
-          scores[bookId] += 1;
-        }
-      });
-    });
-  });
-
-  return scores;
-};
 
 const uniqueById = (books) => {
   const seen = new Set();
@@ -178,48 +135,6 @@ const buildCandidatePool = async (likedBooks, excludedBooks, excludeIds) => {
   return candidates.slice(0, MAX_CANDIDATES);
 };
 
-const explainRecommendation = (contentScore, collaborativeScore) => {
-  if (contentScore >= collaborativeScore) {
-    return 'Similar writing style, themes, and genres to books you liked';
-  }
-
-  return 'Popular with readers who share your taste';
-};
-
-const rankCandidates = async (user, likedBooks, excludedBooks, candidates) => {
-  const dedupedCandidates = filterRecommendationCandidates(candidates, excludedBooks);
-
-  if (dedupedCandidates.length === 0) {
-    return [];
-  }
-
-  const contentScores = getContentScores(likedBooks, dedupedCandidates);
-  const collaborativeScores = await getCollaborativeScores(
-    user,
-    dedupedCandidates.map((book) => book.id)
-  );
-
-  const normalizedContent = normalizeScores(contentScores);
-  const normalizedCollaborative = normalizeScores(collaborativeScores);
-
-  return dedupedCandidates
-    .map((book) => {
-      const contentScore = normalizedContent[book.id] || 0;
-      const collaborativeScore = normalizedCollaborative[book.id] || 0;
-      const score = (contentScore * CONTENT_WEIGHT) + (collaborativeScore * COLLABORATIVE_WEIGHT);
-
-      return {
-        ...book,
-        score: Number(score.toFixed(4)),
-        contentScore: Number(contentScore.toFixed(4)),
-        collaborativeScore: Number(collaborativeScore.toFixed(4)),
-        reason: explainRecommendation(contentScore, collaborativeScore),
-      };
-    })
-    .filter((book) => !shouldExcludeFromRecommendations(book, excludedBooks))
-    .sort((a, b) => b.score - a.score);
-};
-
 const buildExcludedBooks = (likedBooks, nextReadBooks) => {
   const booksById = new Map();
 
@@ -230,6 +145,42 @@ const buildExcludedBooks = (likedBooks, nextReadBooks) => {
   });
 
   return [...booksById.values()];
+};
+
+const rankCandidates = async (user, likedBooks, excludedBooks, candidates) => {
+  const dedupedCandidates = filterRecommendationCandidates(candidates, excludedBooks);
+
+  if (dedupedCandidates.length === 0) {
+    return [];
+  }
+
+  const model = await ensureModel();
+
+  if (!model) {
+    const contentScores = getContentScores(likedBooks, dedupedCandidates);
+    const normalizedContent = normalizeScores(contentScores);
+
+    return applyPopularityBias(
+      dedupedCandidates
+        .map((book) => ({
+          ...book,
+          score: Number((normalizedContent[book.id] || 0).toFixed(4)),
+          contentScore: Number((normalizedContent[book.id] || 0).toFixed(4)),
+          collaborativeScore: 0,
+          reason: 'Similar writing style, themes, and genres to books you liked',
+        }))
+        .filter((book) => !shouldExcludeFromRecommendations(book, excludedBooks))
+        .sort((a, b) => b.score - a.score),
+      POPULARITY_BIAS_WEIGHT
+    );
+  }
+
+  return applyPopularityBias(
+    scoreCandidates(model, user, likedBooks, dedupedCandidates)
+      .filter((book) => !shouldExcludeFromRecommendations(book, excludedBooks))
+      .sort((a, b) => b.score - a.score),
+    POPULARITY_BIAS_WEIGHT
+  );
 };
 
 const generateRecommendations = async (user, options = {}) => {
@@ -258,7 +209,8 @@ const generateRecommendations = async (user, options = {}) => {
 
   const candidates = await buildCandidatePool(likedBooks, excludedBooks, [...excludeSet]);
   const ranked = await rankCandidates(user, likedBooks, excludedBooks, candidates);
-  const available = ranked
+  const enrichedRanked = await bookService.enrichBooksWithRatings(ranked);
+  const available = enrichedRanked
     .filter((book) => !excludeSet.has(book.id))
     .filter((book) => !shouldExcludeFromRecommendations(book, excludedBooks));
   const results = available.slice(0, limit);
@@ -271,9 +223,10 @@ const generateRecommendations = async (user, options = {}) => {
 
 module.exports = {
   generateRecommendations,
-  getCollaborativeScores,
-  CONTENT_WEIGHT,
-  COLLABORATIVE_WEIGHT,
+  getModelMetadata,
+  CONTENT_WEIGHT: DEFAULT_CONTENT_WEIGHT,
+  COLLABORATIVE_WEIGHT: DEFAULT_COLLABORATIVE_WEIGHT,
+  POPULARITY_BIAS_WEIGHT,
   DEFAULT_LIMIT,
   LOAD_MORE_LIMIT,
 };

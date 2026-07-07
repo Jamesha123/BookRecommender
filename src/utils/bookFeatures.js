@@ -24,6 +24,8 @@ const toBookPayload = (book) => {
     categories: book.categories || [],
     description: book.description,
     thumbnail: book.thumbnail,
+    averageRating: book.averageRating,
+    ratingsCount: book.ratingsCount,
     featureText,
     lastFetched: new Date(),
   };
@@ -36,6 +38,8 @@ const toApiBook = (book) => ({
   categories: book.categories || [],
   description: book.description,
   thumbnail: book.thumbnail,
+  averageRating: book.averageRating,
+  ratingsCount: book.ratingsCount,
 });
 
 module.exports = {

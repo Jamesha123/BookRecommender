@@ -3,7 +3,7 @@ require('dotenv').config({ path: '.env' });
 
 const setupTestDB = () => {
   beforeAll(async () => {
-    const url = process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/book-recommender-test';
+    const url = process.env.MONGO_URI_TEST || 'mongodb://localhost:27017/bookrecommender-test';
     await mongoose.connect(url, {
       useNewUrlParser: true,
       useUnifiedTopology: true,

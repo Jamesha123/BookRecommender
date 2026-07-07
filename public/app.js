@@ -273,7 +273,7 @@ const renderRecommendationPanel = () => {
     ? 'No new recommendations right now. Like more books to discover additional matches.'
     : 'Like a few books, then refresh to generate ML recommendations.';
 
-  renderBooks(recommendations, state.recommendationResults, {
+  renderBooks(recommendations, normalizeDisplayScores(state.recommendationResults), {
     showScore: true,
     showReason: true,
     showAddToLikes: true,
@@ -595,6 +595,39 @@ const configureCardActions = (book, options, card, dislikeBtn, likeBtn, nextRead
   }
 };
 
+const normalizeDisplayScores = (books = []) => {
+  if (!books.length) {
+    return books;
+  }
+
+  const scores = books
+    .map((book) => book.score)
+    .filter((score) => typeof score === 'number' && !Number.isNaN(score));
+
+  if (scores.length === 0) {
+    return books;
+  }
+
+  const max = Math.max(...scores);
+  const min = Math.min(...scores);
+  const range = max - min;
+
+  return books.map((book) => {
+    if (typeof book.score !== 'number' || Number.isNaN(book.score)) {
+      return book;
+    }
+
+    if (range === 0) {
+      return { ...book, displayScore: book.score > 0 ? 1 : 0 };
+    }
+
+    return {
+      ...book,
+      displayScore: (book.score - min) / range,
+    };
+  });
+};
+
 const formatMlScore = (score) => {
   if (typeof score !== 'number' || Number.isNaN(score)) {
     return 'ML score: —';
@@ -603,12 +636,62 @@ const formatMlScore = (score) => {
   return `ML score: ${Math.round(score * 100)}%`;
 };
 
+const formatBookRating = (book) => {
+  const rating = Number(book.averageRating);
+  const count = Number(book.ratingsCount);
+
+  if (!Number.isFinite(rating) || rating <= 0) {
+    return null;
+  }
+
+  const ratingText = `★ ${rating.toFixed(1)}`;
+
+  if (!Number.isFinite(count) || count <= 0) {
+    return ratingText;
+  }
+
+  return {
+    ratingText,
+    countText: `${count.toLocaleString()} ratings`,
+  };
+};
+
+const renderBookRating = (ratingElement, book) => {
+  if (!ratingElement) {
+    return;
+  }
+
+  const rating = formatBookRating(book);
+
+  if (!rating) {
+    ratingElement.remove();
+    return;
+  }
+
+  ratingElement.classList.remove('hidden');
+
+  if (typeof rating === 'string') {
+    ratingElement.textContent = rating;
+    return;
+  }
+
+  ratingElement.textContent = '';
+  ratingElement.append(
+    document.createTextNode(`${rating.ratingText} `),
+    Object.assign(document.createElement('span'), {
+      className: 'rating-count',
+      textContent: `(${rating.countText})`,
+    })
+  );
+};
+
 const createBookCard = (book, options = {}) => {
   const node = bookCardTemplate.content.cloneNode(true);
   const card = node.querySelector('.book-card');
   const cover = node.querySelector('.book-cover');
   const title = node.querySelector('.book-title');
   const authors = node.querySelector('.book-authors');
+  const rating = node.querySelector('.book-rating');
   const categories = node.querySelector('.book-categories');
   const score = node.querySelector('.book-score');
   const reason = node.querySelector('.book-reason');
@@ -622,6 +705,7 @@ const createBookCard = (book, options = {}) => {
 
   title.textContent = book.title || 'Untitled';
   authors.textContent = book.authors?.length ? book.authors.join(', ') : 'Unknown author';
+  renderBookRating(rating, book);
 
   if (book.categories?.length) {
     categories.textContent = book.categories.join(' · ');
@@ -639,7 +723,7 @@ const createBookCard = (book, options = {}) => {
 
   if (options.showScore) {
     score.classList.remove('hidden');
-    score.textContent = formatMlScore(book.score);
+    score.textContent = formatMlScore(book.displayScore ?? book.score);
   } else if (score) {
     score.remove();
   }

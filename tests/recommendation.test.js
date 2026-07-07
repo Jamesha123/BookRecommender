@@ -1,123 +1,18 @@
-const { buildFeatureText } = require('../src/utils/bookFeatures');
-
-const tokenize = (text) => {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((token) => token.length > 2);
-};
-
-const buildTermFrequencies = (tokens) => {
-  const frequencies = {};
-
-  tokens.forEach((token) => {
-    frequencies[token] = (frequencies[token] || 0) + 1;
-  });
-
-  const maxFrequency = Math.max(...Object.values(frequencies), 1);
-
-  Object.keys(frequencies).forEach((token) => {
-    frequencies[token] = 0.5 + (0.5 * frequencies[token]) / maxFrequency;
-  });
-
-  return frequencies;
-};
-
-const buildTfidfVectors = (documents) => {
-  const tokenizedDocs = documents.map((document) => tokenize(document));
-  const documentCount = tokenizedDocs.length;
-  const documentFrequency = {};
-
-  tokenizedDocs.forEach((tokens) => {
-    const uniqueTokens = new Set(tokens);
-    uniqueTokens.forEach((token) => {
-      documentFrequency[token] = (documentFrequency[token] || 0) + 1;
-    });
-  });
-
-  return tokenizedDocs.map((tokens) => {
-    const termFrequencies = buildTermFrequencies(tokens);
-    const vector = {};
-
-    Object.entries(termFrequencies).forEach(([token, tf]) => {
-      const idf = Math.log((documentCount + 1) / (documentFrequency[token] + 1)) + 1;
-      vector[token] = tf * idf;
-    });
-
-    return vector;
-  });
-};
-
-const cosineSimilarity = (vectorA, vectorB) => {
-  const terms = new Set([...Object.keys(vectorA), ...Object.keys(vectorB)]);
-
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
-  terms.forEach((term) => {
-    const a = vectorA[term] || 0;
-    const b = vectorB[term] || 0;
-    dotProduct += a * b;
-    normA += a * a;
-    normB += b * b;
-  });
-
-  if (normA === 0 || normB === 0) {
-    return 0;
-  }
-
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-};
-
-const averageVectors = (vectors) => {
-  const combined = {};
-  const counts = {};
-
-  vectors.forEach((vector) => {
-    Object.entries(vector).forEach(([term, score]) => {
-      combined[term] = (combined[term] || 0) + score;
-      counts[term] = (counts[term] || 0) + 1;
-    });
-  });
-
-  Object.keys(combined).forEach((term) => {
-    combined[term] /= counts[term];
-  });
-
-  return combined;
-};
-
-const getContentScores = (likedBooks, candidates) => {
-  const documents = [
-    ...likedBooks.map((book) => buildFeatureText(book)),
-    ...candidates.map((book) => buildFeatureText(book)),
-  ];
-
-  const vectors = buildTfidfVectors(documents);
-  const likedVectors = vectors.slice(0, likedBooks.length);
-  const candidateVectors = vectors.slice(likedBooks.length);
-  const profileVector = averageVectors(likedVectors);
-  const scores = {};
-
-  candidates.forEach((candidate, index) => {
-    scores[candidate.id] = cosineSimilarity(profileVector, candidateVectors[index]);
-  });
-
-  return scores;
-};
-
+const { getContentScores } = require('../src/utils/contentModel');
 const {
   jaccardSimilarity,
-  cosineSimilarity: exportedCosineSimilarity,
+  cosineSimilarity,
   normalizeScores,
 } = require('../src/utils/similarity');
-
 const {
   CONTENT_WEIGHT,
   COLLABORATIVE_WEIGHT,
+  POPULARITY_BIAS_WEIGHT,
 } = require('../src/services/recommendationService');
+const {
+  getPopularitySignal,
+  applyPopularityBias,
+} = require('../src/utils/popularity');
 
 describe('Recommendation ML utilities', () => {
   it('calculates jaccard similarity between user taste profiles', () => {
@@ -131,7 +26,7 @@ describe('Recommendation ML utilities', () => {
     const vectorA = { fantasy: 0.8, adventure: 0.4 };
     const vectorB = { fantasy: 0.6, adventure: 0.2, dragons: 0.3 };
 
-    expect(exportedCosineSimilarity(vectorA, vectorB)).toBeGreaterThan(0.85);
+    expect(cosineSimilarity(vectorA, vectorB)).toBeGreaterThan(0.85);
   });
 
   it('ranks similar books higher with TF-IDF content scoring', () => {
@@ -167,7 +62,7 @@ describe('Recommendation ML utilities', () => {
     expect(scores['candidate-1']).toBeGreaterThan(scores['candidate-2']);
   });
 
-  it('exposes hybrid model weights', () => {
+  it('exposes default hybrid weight constants for fallback scoring', () => {
     expect(CONTENT_WEIGHT + COLLABORATIVE_WEIGHT).toBeCloseTo(1, 5);
   });
 
@@ -175,5 +70,28 @@ describe('Recommendation ML utilities', () => {
     const normalized = normalizeScores({ a: 2, b: 5, c: 8 });
     expect(normalized.a).toBe(0);
     expect(normalized.c).toBe(1);
+  });
+
+  it('derives a stronger popularity signal from highly rated books', () => {
+    const obscure = getPopularitySignal({ averageRating: 3.5, ratingsCount: 12 });
+    const popular = getPopularitySignal({ averageRating: 4.8, ratingsCount: 12000 });
+
+    expect(popular).toBeGreaterThan(obscure);
+  });
+
+  it('gives popular books a small ranking boost without penalizing unknown titles', () => {
+    const books = [
+      { id: 'a', score: 0.5, averageRating: 3.2, ratingsCount: 20 },
+      { id: 'b', score: 0.5, averageRating: 4.7, ratingsCount: 18000 },
+      { id: 'c', score: 0.5 },
+    ];
+
+    const boosted = applyPopularityBias(books, POPULARITY_BIAS_WEIGHT);
+    const popular = boosted.find((book) => book.id === 'b');
+    const obscure = boosted.find((book) => book.id === 'a');
+    const unknown = boosted.find((book) => book.id === 'c');
+
+    expect(popular.score).toBeGreaterThan(obscure.score);
+    expect(unknown.score).toBe(0.5);
   });
 });

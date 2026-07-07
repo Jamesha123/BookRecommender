@@ -76,6 +76,23 @@ const setupConnectionEvents = () => {
     console.log('MongoDB connection restored');
   });
 
+  mongoose.connection.on('connected', () => {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+
+    const { ensureModel } = require('../ml/modelStore');
+    ensureModel()
+      .then((model) => {
+        if (model) {
+          console.log(`ML model ready (${model.version}, trained ${new Date(model.trainedAt).toISOString()})`);
+        }
+      })
+      .catch((error) => {
+        console.warn(`ML model unavailable: ${error.message}`);
+      });
+  });
+
   mongoose.connection.on('error', (error) => {
     console.error('MongoDB connection error:', error.message);
   });

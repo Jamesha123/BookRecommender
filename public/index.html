@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Book Recommender</title>
+  <title>BookRecommender</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -11,8 +11,8 @@
     <header class="header">
       <div>
         <p class="eyebrow">Hybrid ML Engine</p>
-        <h1>Book Recommender</h1>
-        <p class="subtitle">TF-IDF content similarity + collaborative filtering</p>
+        <h1>BookRecommender</h1>
+        <p class="subtitle">Trained hybrid model: matrix factorization + TF-IDF ranker</p>
       </div>
       <div id="auth-panel" class="auth-panel"></div>
     </header>
@@ -49,13 +49,13 @@
         </div>
         <p class="panel-hint">Use <strong>−</strong> for not interested, <strong>→</strong> for next read, and <strong>+</strong> to like. Refresh shows a loading state while new picks are generated.</p>
         <div id="score-help-panel" class="score-help-panel hidden">
-          <p><strong>ML score</strong> is a match rating from 0% to 100%. Higher means the model thinks you are more likely to enjoy the book.</p>
-          <p>It blends two signals from your likes:</p>
+          <p><strong>ML score</strong> is a relative match rating from 0% to 100% within your current recommendation list. The top pick is always 100%; lower picks show how they compare to that best match.</p>
+          <p>Scores are ranked using two learned signals from your likes and dislikes:</p>
           <ul>
-            <li><strong>60% content similarity</strong> — themes, genres, and writing style (TF-IDF)</li>
-            <li><strong>40% collaborative filtering</strong> — books enjoyed by readers with similar taste</li>
+            <li><strong>Content similarity</strong> — themes, genres, and writing style (TF-IDF features)</li>
+            <li><strong>Collaborative filtering</strong> — matrix factorization over reader/book interactions</li>
           </ul>
-          <p>The percentage on each card is that combined score. It helps compare recommendations to each other, not predict a perfect read.</p>
+          <p>The model is trained on user feedback and retrained when preferences change. The percentage on each card is normalized for display so the best match in the list reads as 100%.</p>
         </div>
         <p id="model-info" class="model-info"></p>
         <div id="recommendations" class="book-grid"></div>
@@ -71,6 +71,7 @@
         <div class="book-content">
           <h3 class="book-title"></h3>
           <p class="book-authors"></p>
+          <p class="book-rating hidden"></p>
           <p class="book-categories"></p>
           <p class="book-score hidden"></p>
           <div class="book-extra">
@@ -87,6 +88,6 @@
     </article>
   </template>
 
-  <script src="/app.js?v=15"></script>
+  <script src="/app.js?v=17"></script>
 </body>
 </html>
